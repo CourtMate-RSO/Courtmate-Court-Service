@@ -1,5 +1,7 @@
 """API routes for the Court Service"""
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Request
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from app.models import (
     LocationInput, 
     NearbyCourtsResponse, 
@@ -9,8 +11,11 @@ from app.models import (
     FacilityDB
 )
 from typing import List
+from uuid import UUID
 from app.supabase_client import anon_supabase_client, admin_supabase_client
+import logging
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["facilities"])
 
@@ -66,6 +71,7 @@ async def get_nearby_courts(location: LocationInput):
         )
         
     except Exception as e:
+        logger.error(f"Error fetching nearby courts: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching nearby courts: {str(e)}"
@@ -131,6 +137,7 @@ async def create_facility(facility: FacilityCreate):
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error creating facility: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating facility: {str(e)}"
@@ -138,17 +145,18 @@ async def create_facility(facility: FacilityCreate):
 
 
 @router.get("/facilities/{facility_id}", response_model=FacilityDB, status_code=status.HTTP_200_OK)
-async def get_facility(facility_id: str):
+async def get_facility(facility_id: UUID):
     """
     Get a facility by ID.
     """
     try:
+        logger.info(f"Fetching facility with ID: {facility_id}")
         supabase = anon_supabase_client()
         
         # Get location using RPC function that extracts lat/lng
         response = supabase.rpc(
             'get_facility_location',
-            {'facility_id': facility_id}
+            {'facility_id': str(facility_id)}
         ).execute()
         
         if not response.data or len(response.data) == 0:
@@ -180,6 +188,7 @@ async def get_facility(facility_id: str):
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error fetching facility {facility_id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
@@ -223,6 +232,7 @@ async def list_facilities():
         return facilities
         
     except Exception as e:
+        logger.error(f"Error fetching facilities: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching facilities: {str(e)}"
@@ -231,8 +241,37 @@ async def list_facilities():
 
 @router.get("/health", status_code=status.HTTP_200_OK)
 async def health_check():
-    """Health check endpoint"""
-    return {
+    """
+    Comprehensive health check endpoint.
+    Checks database connectivity and service status.
+    """
+    health_status = {
         "status": "healthy",
-        "service": "court-service"
+        "service": "court-service",
+        "checks": {
+            "database": "unknown",
+            "api": "healthy"
+        }
     }
+    
+    try:
+        # Test database connection by trying to fetch count
+        supabase = anon_supabase_client()
+        
+        # Simple query to test connection
+        response = supabase.table("facilities").select("id", count="exact").limit(1).execute()
+        
+        health_status["checks"]["database"] = "healthy"
+        logger.info("Health check passed - database connected")
+        
+    except Exception as e:
+        logger.error(f"Health check failed - database error: {str(e)}")
+        health_status["status"] = "unhealthy"
+        health_status["checks"]["database"] = f"error: {str(e)}"
+        
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content=health_status
+        )
+    
+    return health_status
