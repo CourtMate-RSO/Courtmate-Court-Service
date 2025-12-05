@@ -8,7 +8,7 @@ class LocationInput(BaseModel):
     """Input model for location-based queries"""
     latitude: float = Field(..., ge=-90, le=90, description="Latitude coordinate")
     longitude: float = Field(..., ge=-180, le=180, description="Longitude coordinate")
-    radius_km: float = Field(default=10.0, gt=0, le=50, description="Search radius in kilometers")
+    radius_km: float = Field(default=10.0, gt=0, le=20000, description="Search radius in kilometers")
 
 
 class FacilityLocation(BaseModel):
