@@ -78,7 +78,7 @@ async def get_nearby_courts(location: LocationInput):
         )
 
 
-@router.post("/facilities", response_model=FacilityDB, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=FacilityDB, status_code=status.HTTP_201_CREATED)
 async def create_facility(facility: FacilityCreate):
     """
     Create a new facility in the database.
@@ -144,7 +144,7 @@ async def create_facility(facility: FacilityCreate):
         )
 
 
-@router.get("/facilities/{facility_id}", response_model=FacilityDB, status_code=status.HTTP_200_OK)
+@router.get("/{facility_id}", response_model=FacilityDB, status_code=status.HTTP_200_OK)
 async def get_facility(facility_id: UUID):
     """
     Get a facility by ID.
@@ -195,7 +195,7 @@ async def get_facility(facility_id: UUID):
         )
 
 
-@router.get("/facilities", response_model=List[FacilityDB], status_code=status.HTTP_200_OK)
+@router.get("/", response_model=List[FacilityDB], status_code=status.HTTP_200_OK)
 async def list_facilities():
     """
     Get all facilities.
@@ -275,3 +275,138 @@ async def health_check():
         )
     
     return health_status
+
+
+from app.models import CourtCreate, CourtResponse
+
+@router.post("/{facility_id}/courts", response_model=CourtResponse, status_code=status.HTTP_201_CREATED)
+async def create_court(facility_id: UUID, court: CourtCreate):
+    """
+    Add a new court to a facility.
+    """
+    try:
+        supabase = admin_supabase_client()
+        
+        # Verify facility exists
+        facility_check = supabase.table("facilities").select("id").eq("id", str(facility_id)).execute()
+        if not facility_check.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail=f"Facility {facility_id} not found"
+            )
+
+        court_data = {
+            "facility_id": str(facility_id),
+            "name": court.name,
+            "sport": court.sport,
+            "indoor": court.indoor,
+            "slot_minutes": court.slot_minutes,
+            "min_duration": court.min_duration,
+            "max_duration": court.max_duration
+        }
+        
+        response = supabase.table("courts").insert(court_data).execute()
+        
+        if not response.data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create court"
+            )
+            
+        created_court = response.data[0]
+        return CourtResponse(**created_court)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating court: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating court: {str(e)}"
+        )
+
+@router.get("/{facility_id}/courts", response_model=List[CourtResponse], status_code=status.HTTP_200_OK)
+async def get_facility_courts(facility_id: UUID):
+    """
+    Get all courts for a specific facility.
+    """
+    try:
+        supabase = anon_supabase_client()
+        
+        response = supabase.table("courts").select("*").eq("facility_id", str(facility_id)).execute()
+        
+        return [CourtResponse(**court) for court in response.data]
+        
+    except Exception as e:
+        logger.error(f"Error fetching courts for facility {facility_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching courts: {str(e)}"
+        )
+
+@router.get("/user/{user_id}", response_model=List[FacilityDB], status_code=status.HTTP_200_OK)
+async def get_user_facilities(user_id: UUID):
+    """
+    Get all facilities managed by a specific user.
+    """
+    try:
+        supabase = anon_supabase_client()
+        
+        # We need to get facilities and convert geography to lat/long
+        # Since we can't easily do ST_X/ST_Y on a simple select, we might need a custom RPC or 
+        # just select the raw column and hope our client handles it, 
+        # BUT our models expect 'location' as object.
+        # Let's use the same approach as list_facilities but filter in python or 
+        # ideally use a query that supports filtering.
+        # For now, let's use the 'get_all_facilities' RPC and filter by user_id if possible,
+        # or just simple select if we can parse the location.
+        
+        # To keep it consistent and efficient, let's just query the table and parse the location manually if needed,
+        # OR use a specific RPC for this if performance matters. 
+        # Given the project state, let's try direct query and see if we can extract location.
+        # Actually, the existing pattern uses RPC 'get_all_facilities' which returns lat/long. 
+        # Let's see if we can filter that. 
+        # If not, let's create a new RPC or use client side filtering (not ideal for large datasets).
+        
+        # BETTER APPROACH: Use the same pattern as get_facility but with a where clause?
+        # Supabase-py doesn't support complex postgis parsing in simple select easily without view/rpc.
+        
+        # Let's try to finding if there's a way to filter the existing RPC? No.
+        # Let's try to select and rely on a helper to parse or just `get_all_facilities` and filter in memory (MVP approach).
+        
+        response = supabase.rpc('get_all_facilities').execute()
+        
+        current_user_str = str(user_id)
+        user_facilities = []
+        
+        for facility in response.data:
+            if facility.get('user_id') == current_user_str:
+                location_obj = FacilityLocation(
+                    latitude=facility['latitude'],
+                    longitude=facility['longitude']
+                )
+                
+                # Fetch courts for this facility to be complete? 
+                # The prompt asked for "endpoint to get facilities", usually implies list view.
+                # Detailed view including courts can be fetched via get_facility_courts.
+                
+                user_facilities.append(FacilityDB(
+                    id=facility['id'],
+                    name=facility.get('name'),
+                    location=location_obj,
+                    address_line=facility.get('address_line'),
+                    city=facility.get('city'),
+                    country=facility.get('country'),
+                    image=facility.get('image'),
+                    user_id=facility.get('user_id'),
+                    created_at=facility.get('created_at')
+                ))
+                
+        return user_facilities
+
+    except Exception as e:
+        logger.error(f"Error fetching user facilities: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching user facilities: {str(e)}"
+        )

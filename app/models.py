@@ -17,6 +17,39 @@ class FacilityLocation(BaseModel):
     longitude: float
 
 
+from enum import Enum
+
+class CourtBase(BaseModel):
+    """Base model for Court data"""
+    
+    class SportType(str, Enum):
+        TENNIS = "TENNIS"
+        PADEL = "PADEL"
+        BADMINTON = "BADMINTON"
+        PICKLEBALL = "PICKLEBALL"
+        SQUASH = "SQUASH"
+        OTHER = "OTHER"
+
+    name: str = Field(..., min_length=1)
+    sport: str = Field(..., description="Sport type (TENNIS, PADEL, etc)")
+    indoor: bool = False
+    slot_minutes: int = Field(60, ge=30, le=120)
+    min_duration: int = Field(60, ge=30)
+    max_duration: int = Field(120, ge=30)
+
+class CourtCreate(CourtBase):
+    """Model for creating a new court"""
+    pass
+
+class CourtResponse(CourtBase):
+    """Response model for court data"""
+    id: UUID
+    facility_id: UUID
+    created_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
 class FacilityResponse(BaseModel):
     """Response model for facility data"""
     id: UUID
@@ -27,6 +60,7 @@ class FacilityResponse(BaseModel):
     country: Optional[str] = None
     image: Optional[str] = None
     distance_km: Optional[float] = Field(None, description="Distance from search point in kilometers")
+    courts: Optional[list[CourtResponse]] = None
     
     class Config:
         from_attributes = True
