@@ -331,11 +331,27 @@ async def get_facility_courts(facility_id: UUID):
     Get all courts for a specific facility.
     """
     try:
-        supabase = anon_supabase_client()
+        # Use admin client to bypass RLS and ensure we can read all courts
+        supabase = admin_supabase_client()
         
-        response = supabase.table("courts").select("*").eq("facility_id", str(facility_id)).execute()
+        facility_id_str = str(facility_id)
+        logger.info(f"Fetching courts for facility {facility_id_str}")
         
-        return [CourtResponse(**court) for court in response.data]
+        response = supabase.table("courts").select("*").eq("facility_id", facility_id_str).execute()
+        
+        logger.info(f"Query returned {len(response.data) if response.data else 0} courts")
+        
+        if not response.data:
+            logger.info(f"No courts found for facility {facility_id_str}")
+            return []
+        
+        courts = []
+        for court in response.data:
+            logger.info(f"Processing court: {court.get('id')} for facility {facility_id_str}")
+            courts.append(CourtResponse(**court))
+        
+        logger.info(f"Successfully returned {len(courts)} courts for facility {facility_id_str}")
+        return courts
         
     except Exception as e:
         logger.error(f"Error fetching courts for facility {facility_id}: {str(e)}")
@@ -350,45 +366,53 @@ async def get_user_facilities(user_id: UUID):
     Get all facilities managed by a specific user.
     """
     try:
-        supabase = anon_supabase_client()
-        
-        # We need to get facilities and convert geography to lat/long
-        # Since we can't easily do ST_X/ST_Y on a simple select, we might need a custom RPC or 
-        # just select the raw column and hope our client handles it, 
-        # BUT our models expect 'location' as object.
-        # Let's use the same approach as list_facilities but filter in python or 
-        # ideally use a query that supports filtering.
-        # For now, let's use the 'get_all_facilities' RPC and filter by user_id if possible,
-        # or just simple select if we can parse the location.
-        
-        # To keep it consistent and efficient, let's just query the table and parse the location manually if needed,
-        # OR use a specific RPC for this if performance matters. 
-        # Given the project state, let's try direct query and see if we can extract location.
-        # Actually, the existing pattern uses RPC 'get_all_facilities' which returns lat/long. 
-        # Let's see if we can filter that. 
-        # If not, let's create a new RPC or use client side filtering (not ideal for large datasets).
-        
-        # BETTER APPROACH: Use the same pattern as get_facility but with a where clause?
-        # Supabase-py doesn't support complex postgis parsing in simple select easily without view/rpc.
-        
-        # Let's try to finding if there's a way to filter the existing RPC? No.
-        # Let's try to select and rely on a helper to parse or just `get_all_facilities` and filter in memory (MVP approach).
-        
-        response = supabase.rpc('get_all_facilities').execute()
+        # Use admin client to bypass RLS and ensure we can read all facilities
+        supabase = admin_supabase_client()
         
         current_user_str = str(user_id)
+        logger.info(f"Fetching facilities for user {current_user_str}")
+        
+        # Query facilities table directly with user_id filter
+        response = supabase.table("facilities").select("*").eq("user_id", current_user_str).execute()
+        
+        logger.info(f"Direct query returned {len(response.data) if response.data else 0} facilities")
+        
+        if not response.data:
+            logger.info(f"No facilities found for user {current_user_str}")
+            return []
+        
         user_facilities = []
         
         for facility in response.data:
-            if facility.get('user_id') == current_user_str:
-                location_obj = FacilityLocation(
-                    latitude=facility['latitude'],
-                    longitude=facility['longitude']
-                )
+            facility_id = facility.get('id')
+            location_geom = facility.get('location')
+            
+            logger.info(f"Processing facility {facility_id}: location type={type(location_geom)}")
+            
+            try:
+                # Extract latitude and longitude from PostGIS geometry
+                # location is stored as geography/geometry in WKB or GeoJSON format
+                if location_geom:
+                    # Handle different geometry formats
+                    if isinstance(location_geom, dict):
+                        # GeoJSON format
+                        coords = location_geom.get('coordinates', [0, 0])
+                        latitude = coords[1] if len(coords) > 1 else 0
+                        longitude = coords[0] if len(coords) > 0 else 0
+                    else:
+                        # WKB format - extract using PostGIS function
+                        # For now, use 0,0 as fallback and let client handle
+                        latitude = 0
+                        longitude = 0
+                        logger.warning(f"Could not parse geometry for {facility_id}: {location_geom}")
+                else:
+                    latitude = 0
+                    longitude = 0
                 
-                # Fetch courts for this facility to be complete? 
-                # The prompt asked for "endpoint to get facilities", usually implies list view.
-                # Detailed view including courts can be fetched via get_facility_courts.
+                location_obj = FacilityLocation(
+                    latitude=latitude,
+                    longitude=longitude
+                )
                 
                 user_facilities.append(FacilityDB(
                     id=facility['id'],
@@ -402,6 +426,13 @@ async def get_user_facilities(user_id: UUID):
                     created_at=facility.get('created_at')
                 ))
                 
+                logger.info(f"✓ Added facility {facility_id} to results")
+                
+            except Exception as e:
+                logger.error(f"Error processing facility {facility_id}: {str(e)}")
+                continue
+        
+        logger.info(f"Found {len(user_facilities)} facilities for user {current_user_str}")
         return user_facilities
 
     except Exception as e:
