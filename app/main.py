@@ -6,13 +6,22 @@ from fastapi.responses import JSONResponse
 from app.config import get_settings
 from app.routes import router as facilities_router
 import logging
+import sys
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+# Structured JSON logging setup
+from pythonjsonlogger import jsonlogger
+
+logger = logging.getLogger("court-service")
+handler = logging.StreamHandler(sys.stdout)
+formatter = jsonlogger.JsonFormatter(
+    '%(asctime)s %(levelname)s %(name)s %(message)s',
+    rename_fields={"levelname": "level", "asctime": "timestamp"}
 )
-logger = logging.getLogger(__name__)
+handler.setFormatter(formatter)
+logger.handlers = []
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
+logger.propagate = False
 
 settings = get_settings()
 
@@ -48,6 +57,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Prometheus metrics instrumentation
+from prometheus_fastapi_instrumentator import Instrumentator
+Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 app.include_router(facilities_router, prefix=FACILITIES_PREFIX)
 

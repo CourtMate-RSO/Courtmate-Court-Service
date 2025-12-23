@@ -5,3 +5,6 @@ pydantic-settings
 supabase
 PyJWT
 python-dotenv
+python-json-logger
+prometheus-client
+prometheus-fastapi-instrumentator
