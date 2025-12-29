@@ -1,13 +1,29 @@
 """Main FastAPI application for Court Service"""
-from fastapi import FastAPI
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from app.config import get_settings
 from app.routes import router as facilities_router
+import logging
+import sys
+
+# Structured JSON logging setup
+from pythonjsonlogger import jsonlogger
+
+logger = logging.getLogger("court-service")
+handler = logging.StreamHandler(sys.stdout)
+formatter = jsonlogger.JsonFormatter(
+    '%(asctime)s %(levelname)s %(name)s %(message)s',
+    rename_fields={"levelname": "level", "asctime": "timestamp"}
+)
+handler.setFormatter(formatter)
+logger.handlers = []
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
+logger.propagate = False
 
 settings = get_settings()
-
-# Get settings
 
 FACILITIES_PREFIX = f"/api/{settings.api_version}/facilities"
 
@@ -42,9 +58,42 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-security = HTTPBearer()
+# Prometheus metrics instrumentation
+from prometheus_fastapi_instrumentator import Instrumentator
+Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 app.include_router(facilities_router, prefix=FACILITIES_PREFIX)
+
+
+# Custom exception handler for validation errors (UUID parsing, etc.)
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """
+    Handle validation errors (like invalid UUID format) and return 400 instead of 422.
+    This makes the API more consistent with REST conventions.
+    """
+    errors = exc.errors()
+    
+    # Check if it's a UUID validation error in path parameters
+    for error in errors:
+        if error.get("type") == "uuid_parsing" and "path" in error.get("loc", []):
+            # Return 400 Bad Request for invalid UUID in path
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={
+                    "detail": f"Invalid UUID format: {error.get('input', 'unknown')}"
+                }
+            )
+    
+    # For other validation errors, return 422 (default behavior)
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": errors}
+    )
+
+
+logger.info(f"Court Service started in {settings.env} mode")
+logger.info(f"API available at: {FACILITIES_PREFIX}")
 
 
 @app.get("/", tags=["root"])

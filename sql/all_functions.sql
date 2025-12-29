@@ -19,6 +19,7 @@ RETURNS TABLE (
     distance_km double precision
 ) 
 LANGUAGE plpgsql
+SECURITY DEFINER
 AS $$
 BEGIN
     RETURN QUERY
@@ -60,6 +61,7 @@ RETURNS TABLE (
     created_at timestamptz
 ) 
 LANGUAGE plpgsql
+SECURITY DEFINER
 AS $$
 BEGIN
     RETURN QUERY
@@ -94,6 +96,7 @@ RETURNS TABLE (
     created_at timestamptz
 ) 
 LANGUAGE plpgsql
+SECURITY DEFINER
 AS $$
 BEGIN
     RETURN QUERY
