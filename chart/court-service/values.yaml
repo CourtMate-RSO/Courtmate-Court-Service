@@ -1,0 +1,53 @@
+replicaCount: 1
+
+image:
+  repository: courtmateacr.azurecr.io/court-service
+  tag: dev
+  pullPolicy: IfNotPresent
+
+containerPort: 8000
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+  host: ""
+  path: /api/courts(/|$)(.*)
+
+probes:
+  enabled: true
+  path: /health
+  liveness:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+envFromSecret:
+  enabled: true
+  secretName: court-service-secrets
+
+env:
+  - name: ENV
+    value: "prod"
+
+nameOverride: ""
+fullnameOverride: ""
