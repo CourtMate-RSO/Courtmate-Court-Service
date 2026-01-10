@@ -27,27 +27,15 @@ settings = get_settings()
 
 FACILITIES_PREFIX = f"/api/{settings.api_version}/facilities"
 
-if settings.env=="prod":
-    # Create FastAPI application
-    app = FastAPI(
-        title=settings.api_title,
-        version=settings.api_version,
-        description=settings.api_description,
-        openapi_url=None,
-        docs_url=None,
-        redoc_url=None,
-        
-    )
-else:
-    app = FastAPI(
-        title=settings.api_title,
-        version=settings.api_version,
-        description=settings.api_description,
-        openapi_url=f"{FACILITIES_PREFIX}/openapi.json",
-        docs_url=f"{FACILITIES_PREFIX}/docs",
-        redoc_url=f"{FACILITIES_PREFIX}/redoc",
-        
-    )
+# Enable docs for documentation generation
+app = FastAPI(
+    title=settings.api_title,
+    version=settings.api_version,
+    description=settings.api_description,
+    openapi_url=f"{FACILITIES_PREFIX}/openapi.json",
+    docs_url=f"{FACILITIES_PREFIX}/docs",
+    redoc_url=f"{FACILITIES_PREFIX}/redoc",
+)
 
 # Configure CORS
 app.add_middleware(
