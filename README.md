@@ -16,14 +16,15 @@ A FastAPI microservice for handling court-related operations, including finding 
 
 ## 📝 API Endpoints
 
-### Facilities
-- `GET /api/v1/facilities/` - List all facilities
-- `GET /api/v1/facilities/{id}` - Get facility by ID
-- `POST /api/v1/facilities/` - Create new facility
-- `POST /api/v1/facilities/nearby` - Find nearby facilities
+### Courts
+- `POST /api/courts/` - Create new facility (admin only)
+- `GET /api/courts/{facility_id}` - Get facility by ID
+- `POST /api/courts/nearby` - Find nearby facilities (request body: `latitude`, `longitude`, `radius_km`)
 
 ### Health
-- `GET /health` - Service health check
+- `GET /api/courts/health` - Service health check
+
+Note: the OpenAPI spec exposes endpoints under `/api/courts`; legacy `/api/v1/facilities` routes have been consolidated to the `/api/courts` paths defined above.
 
 ## 🏗️ Project Structure
 
