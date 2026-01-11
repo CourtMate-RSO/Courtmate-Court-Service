@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: courtmateacr.azurecr.io/court-service
+  repository: courtmate603fc8acr.azurecr.io/court-service
   tag: dev
   pullPolicy: IfNotPresent
 
@@ -16,8 +16,12 @@ ingress:
   className: nginx
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /$2
-  host: ""
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  host: "courtmate.duckdns.org"
   path: /api/courts(/|$)(.*)
+  tls:
+    enabled: true
+    secretName: court-service-tls
 
 probes:
   enabled: true
